@@ -31,6 +31,8 @@ TBD
 - Spring Java Format enforced via Maven plugin
 - All code must pass formatting validation before commit
 - Use Java 17 compatible features (avoid Java 21+ specific APIs)
+- Use modern Java technics like Java Records, Pattern Matching, Text Block etc ...
+
 
 ### Testing Strategy
 
