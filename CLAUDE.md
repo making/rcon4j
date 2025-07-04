@@ -31,13 +31,21 @@ TBD
 - Spring Java Format enforced via Maven plugin
 - All code must pass formatting validation before commit
 - Use Java 17 compatible features (avoid Java 21+ specific APIs)
-- Use modern Java technics like Java Records, Pattern Matching, Text Block etc ...
+- Use modern Java technics as much as possible like Java Records, Pattern Matching, Text Block etc ...
+- Be sure to avoid circular references between classes and packages.
 
+### Documentation
+
+- Specify when this library should be used
+- The explanations are written from the perspective of the API user, with plenty of code examples to make usage easy to understand.
+- No need for excessive advertising
+- There is no need to use emojis or flashy expressions, just write simply and honestly.
 
 ### Testing Strategy
 
 - JUnit 5 with AssertJ
 - All tests must pass before completing tasks
+- Code examples in the README must be tested to ensure they work.
 
 ### After Task completion
 
