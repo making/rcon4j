@@ -27,7 +27,6 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * A client for the Source RCON (Remote Console) protocol.
@@ -94,19 +93,12 @@ public class RemoteConsole implements Closeable {
 
 	private final SocketChannel channel;
 
-	private final ByteBuffer readBuffer;
-
-	private final ReentrantLock readLock;
-
 	private final AtomicInteger requestId;
 
 	private final Duration readTimeout;
 
 	private RemoteConsole(SocketChannel channel, Duration readTimeout) {
 		this.channel = channel;
-		this.readBuffer = ByteBuffer.allocate(READ_BUFFER_SIZE);
-		this.readBuffer.order(ByteOrder.LITTLE_ENDIAN);
-		this.readLock = new ReentrantLock();
 		this.requestId = new AtomicInteger(0x7fffffff);
 		this.readTimeout = readTimeout;
 	}
@@ -248,6 +240,7 @@ public class RemoteConsole implements Closeable {
 
 		int packetSize = 10 + strBytes.length;
 		ByteBuffer buffer = ByteBuffer.allocate(4 + packetSize);
+		// Set byte order to little-endian as required by RCON protocol
 		buffer.order(ByteOrder.LITTLE_ENDIAN);
 		buffer.putInt(packetSize);
 		buffer.putInt(reqId);
@@ -279,19 +272,25 @@ public class RemoteConsole implements Closeable {
 	}
 
 	private RawResponse readResponse(Duration timeout) {
-		this.readLock.lock();
 		try {
 			this.channel.socket().setSoTimeout((int) timeout.toMillis());
 
-			this.readBuffer.clear();
+			// Allocate buffer in write mode (position=0, limit=capacity)
+			ByteBuffer readBuffer = ByteBuffer.allocate(READ_BUFFER_SIZE);
+			// Set byte order to little-endian as required by RCON protocol
+			readBuffer.order(ByteOrder.LITTLE_ENDIAN);
 
-			int bytesRead = readAtLeast(4);
+			// Read at least 4 bytes (packet size field) into buffer
+			int bytesRead = readAtLeast(readBuffer, 4);
 			if (bytesRead < 4) {
-				throw new IOException("Connection closed");
+				throw new RconException.ConnectionClosedException();
 			}
 
-			this.readBuffer.flip();
-			int dataSize = this.readBuffer.getInt();
+			// Switch to read mode: set limit to current position, then reset position to
+			// 0
+			readBuffer.flip();
+			// Read the packet size (first 4 bytes)
+			int dataSize = readBuffer.getInt();
 
 			if (dataSize < 10) {
 				throw new RconException.UnexpectedFormatException();
@@ -301,35 +300,41 @@ public class RemoteConsole implements Closeable {
 				throw new RconException.ResponseTooLongException();
 			}
 
-			this.readBuffer.compact();
+			// Switch back to write mode: copy unread data to beginning, position after
+			// copied data
+			readBuffer.compact();
 
-			int remaining = dataSize - this.readBuffer.position();
+			// Read remaining packet data if needed
+			int remaining = dataSize - readBuffer.position();
 			if (remaining > 0) {
-				int additionalRead = readAtLeast(this.readBuffer.position() + remaining) - this.readBuffer.position();
+				int additionalRead = readAtLeast(readBuffer, readBuffer.position() + remaining) - readBuffer.position();
 				if (additionalRead < remaining) {
-					throw new IOException("Connection closed");
+					throw new RconException.ConnectionClosedException();
 				}
 			}
 
-			this.readBuffer.flip();
-			return parseResponseData(this.readBuffer, dataSize);
+			// Switch to read mode for parsing
+			readBuffer.flip();
+			return parseResponseData(readBuffer, dataSize);
 		}
 		catch (IOException ex) {
 			throw new UncheckedIOException(ex);
 		}
-		finally {
-			this.readLock.unlock();
-		}
 	}
 
-	private int readAtLeast(int minBytes) throws IOException {
-		while (this.readBuffer.position() < minBytes) {
-			int read = this.channel.read(this.readBuffer);
-			if (read < 0) {
-				return this.readBuffer.position();
+	private int readAtLeast(ByteBuffer buffer, int minBytes) {
+		try {
+			while (buffer.position() < minBytes) {
+				int read = this.channel.read(buffer);
+				if (read < 0) {
+					return buffer.position();
+				}
 			}
+			return buffer.position();
 		}
-		return this.readBuffer.position();
+		catch (IOException ex) {
+			throw new UncheckedIOException(ex);
+		}
 	}
 
 	private static RawResponse parseResponseData(ByteBuffer buffer, int length) {
@@ -337,13 +342,16 @@ public class RemoteConsole implements Closeable {
 			throw new RconException.UnexpectedFormatException();
 		}
 
+		// Read request ID (4 bytes) and response type (4 bytes) from buffer
 		int requestId = buffer.getInt();
 		int responseType = buffer.getInt();
 
+		// Read body bytes (length minus 8 bytes for IDs and 2 bytes for null terminators)
 		int bodyLength = length - 10;
 		byte[] body = new byte[bodyLength];
 		buffer.get(body);
 
+		// Find null terminator to get actual string length
 		int nullIndex = 0;
 		for (int i = 0; i < body.length; i++) {
 			if (body[i] == 0) {
@@ -353,6 +361,7 @@ public class RemoteConsole implements Closeable {
 			nullIndex = i + 1;
 		}
 
+		// Trim body to exclude null terminators
 		byte[] trimmedBody = new byte[nullIndex];
 		System.arraycopy(body, 0, trimmedBody, 0, nullIndex);
 

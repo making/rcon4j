@@ -94,4 +94,15 @@ public class RconException extends RuntimeException {
 
 	}
 
+	/**
+	 * Exception thrown when the connection is closed unexpectedly.
+	 */
+	public static class ConnectionClosedException extends RconException {
+
+		public ConnectionClosedException() {
+			super("rcon: connection closed");
+		}
+
+	}
+
 }
