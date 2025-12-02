@@ -48,7 +48,10 @@ public class Main {
 import am.ik.rcon.RemoteConsole;
 import java.time.Duration;
 
-try (var rcon = RemoteConsole.connect("localhost:25575", "password", Duration.ofSeconds(30))) {
+try (var rcon = RemoteConsole.builder("localhost:25575", "password")
+        .connectTimeout(Duration.ofSeconds(30))
+        .readTimeout(Duration.ofSeconds(60))
+        .connect()) {
     var response = rcon.command("list");
     System.out.println(response.body());
 }

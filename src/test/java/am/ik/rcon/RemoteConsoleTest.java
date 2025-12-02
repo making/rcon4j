@@ -46,8 +46,9 @@ class RemoteConsoleTest {
 		try (MockRconServer server = new MockRconServer()) {
 			server.start();
 
-			try (RemoteConsole rcon = RemoteConsole.connect("localhost:" + server.getPort(), "password",
-					Duration.ofSeconds(5))) {
+			try (RemoteConsole rcon = RemoteConsole.builder("localhost:" + server.getPort(), "password")
+				.connectTimeout(Duration.ofSeconds(5))
+				.connect()) {
 				assertThat(rcon.localAddress()).isNotNull();
 				assertThat(rcon.remoteAddress()).isNotNull();
 			}
@@ -60,9 +61,9 @@ class RemoteConsoleTest {
 			server.setAuthShouldFail(true);
 			server.start();
 
-			assertThatThrownBy(
-					() -> RemoteConsole.connect("localhost:" + server.getPort(), "wrong", Duration.ofSeconds(5)))
-				.isInstanceOf(RconException.AuthFailedException.class);
+			assertThatThrownBy(() -> RemoteConsole.builder("localhost:" + server.getPort(), "wrong")
+				.connectTimeout(Duration.ofSeconds(5))
+				.connect()).isInstanceOf(RconException.AuthFailedException.class);
 		}
 	}
 
@@ -72,8 +73,9 @@ class RemoteConsoleTest {
 			server.setCommandResponse("There are 5 players online");
 			server.start();
 
-			try (RemoteConsole rcon = RemoteConsole.connect("localhost:" + server.getPort(), "password",
-					Duration.ofSeconds(5))) {
+			try (RemoteConsole rcon = RemoteConsole.builder("localhost:" + server.getPort(), "password")
+				.connectTimeout(Duration.ofSeconds(5))
+				.connect()) {
 				RconResponse response = rcon.command("list");
 				assertThat(response.body()).isEqualTo("There are 5 players online");
 			}
@@ -86,8 +88,9 @@ class RemoteConsoleTest {
 			server.setCommandResponse("Command executed");
 			server.start();
 
-			try (RemoteConsole rcon = RemoteConsole.connect("localhost:" + server.getPort(), "password",
-					Duration.ofSeconds(5))) {
+			try (RemoteConsole rcon = RemoteConsole.builder("localhost:" + server.getPort(), "password")
+				.connectTimeout(Duration.ofSeconds(5))
+				.connect()) {
 				int requestId = rcon.write("help");
 				RconResponse response = rcon.read(Duration.ofSeconds(5));
 				assertThat(response.body()).isEqualTo("Command executed");
@@ -101,8 +104,9 @@ class RemoteConsoleTest {
 		try (MockRconServer server = new MockRconServer()) {
 			server.start();
 
-			try (RemoteConsole rcon = RemoteConsole.connect("localhost:" + server.getPort(), "password",
-					Duration.ofSeconds(5))) {
+			try (RemoteConsole rcon = RemoteConsole.builder("localhost:" + server.getPort(), "password")
+				.connectTimeout(Duration.ofSeconds(5))
+				.connect()) {
 				String longCommand = "a".repeat(2000);
 				assertThatThrownBy(() -> rcon.write(longCommand))
 					.isInstanceOf(RconException.CommandTooLongException.class);
@@ -115,8 +119,9 @@ class RemoteConsoleTest {
 		try (MockRconServer server = new MockRconServer()) {
 			server.start();
 
-			try (RemoteConsole rcon = RemoteConsole.connect("localhost:" + server.getPort(), "password",
-					Duration.ofSeconds(5))) {
+			try (RemoteConsole rcon = RemoteConsole.builder("localhost:" + server.getPort(), "password")
+				.connectTimeout(Duration.ofSeconds(5))
+				.connect()) {
 				server.setCommandResponse("Response 1");
 				RconResponse response1 = rcon.command("cmd1");
 				assertThat(response1.body()).isEqualTo("Response 1");
@@ -135,8 +140,9 @@ class RemoteConsoleTest {
 			server.setCommandResponse(largeResponse);
 			server.start();
 
-			try (RemoteConsole rcon = RemoteConsole.connect("localhost:" + server.getPort(), "password",
-					Duration.ofSeconds(5))) {
+			try (RemoteConsole rcon = RemoteConsole.builder("localhost:" + server.getPort(), "password")
+				.connectTimeout(Duration.ofSeconds(5))
+				.connect()) {
 				RconResponse response = rcon.command("large");
 				assertThat(response.body()).isEqualTo(largeResponse);
 			}

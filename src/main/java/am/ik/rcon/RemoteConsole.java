@@ -25,6 +25,7 @@ import java.nio.ByteOrder;
 import java.nio.channels.SocketChannel;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.Objects;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -54,16 +55,16 @@ import java.util.concurrent.locks.ReentrantLock;
  * }</pre>
  *
  * <p>
- * For more control over request IDs:
+ * With custom timeouts using builder:
  * </p>
  *
  * <pre>{@code
- * try (RemoteConsole rcon = RemoteConsole.connect("localhost:25575", "password")) {
- *     int requestId = rcon.write("list");
- *     RconResponse response = rcon.read();
- *     if (response.requestId() == requestId) {
- *         System.out.println(response.body());
- *     }
+ * try (RemoteConsole rcon = RemoteConsole.builder("localhost:25575", "password")
+ *         .connectTimeout(Duration.ofSeconds(30))
+ *         .readTimeout(Duration.ofSeconds(60))
+ *         .connect()) {
+ *     RconResponse response = rcon.command("list");
+ *     System.out.println(response.body());
  * }
  * }</pre>
  *
@@ -99,16 +100,30 @@ public class RemoteConsole implements Closeable {
 
 	private final AtomicInteger requestId;
 
-	private RemoteConsole(SocketChannel channel) {
+	private final Duration readTimeout;
+
+	private RemoteConsole(SocketChannel channel, Duration readTimeout) {
 		this.channel = channel;
 		this.readBuffer = ByteBuffer.allocate(READ_BUFFER_SIZE);
 		this.readBuffer.order(ByteOrder.LITTLE_ENDIAN);
 		this.readLock = new ReentrantLock();
 		this.requestId = new AtomicInteger(0x7fffffff);
+		this.readTimeout = readTimeout;
 	}
 
 	/**
-	 * Connects to an RCON server and authenticates with the given password.
+	 * Creates a new builder for RemoteConsole with the required parameters.
+	 * @param host the host address in "host:port" format (e.g., "localhost:25575")
+	 * @param password the RCON password
+	 * @return a new Builder instance
+	 */
+	public static Builder builder(String host, String password) {
+		return new Builder(host, password);
+	}
+
+	/**
+	 * Connects to an RCON server and authenticates with the given password. This is a
+	 * shortcut for {@code RemoteConsole.builder(host, password).connect()}.
 	 * @param host the host address in "host:port" format (e.g., "localhost:25575")
 	 * @param password the RCON password
 	 * @return a connected and authenticated RemoteConsole instance
@@ -118,42 +133,7 @@ public class RemoteConsole implements Closeable {
 	 * auth response
 	 */
 	public static RemoteConsole connect(String host, String password) {
-		return connect(host, password, DEFAULT_CONNECT_TIMEOUT);
-	}
-
-	/**
-	 * Connects to an RCON server and authenticates with the given password and custom
-	 * timeout.
-	 * @param host the host address in "host:port" format (e.g., "localhost:25575")
-	 * @param password the RCON password
-	 * @param timeout the connection timeout
-	 * @return a connected and authenticated RemoteConsole instance
-	 * @throws UncheckedIOException if the connection fails
-	 * @throws RconException.AuthFailedException if authentication fails
-	 * @throws RconException.InvalidAuthResponseException if the server returns an invalid
-	 * auth response
-	 */
-	public static RemoteConsole connect(String host, String password, Duration timeout) {
-		SocketAddress address = parseHostPort(host);
-		SocketChannel channel = null;
-		try {
-			channel = SocketChannel.open();
-			channel.socket().connect(address, (int) timeout.toMillis());
-			RemoteConsole console = new RemoteConsole(channel);
-			console.authenticate(password, timeout);
-			return console;
-		}
-		catch (IOException ex) {
-			if (channel != null) {
-				try {
-					channel.close();
-				}
-				catch (IOException closeEx) {
-					ex.addSuppressed(closeEx);
-				}
-			}
-			throw new UncheckedIOException(ex);
-		}
+		return builder(host, password).connect();
 	}
 
 	/**
@@ -182,12 +162,12 @@ public class RemoteConsole implements Closeable {
 	}
 
 	/**
-	 * Reads a response from the RCON server.
+	 * Reads a response from the RCON server using the configured read timeout.
 	 * @return the response containing the body and request ID
 	 * @throws UncheckedIOException if an I/O error occurs
 	 */
 	public RconResponse read() {
-		return read(DEFAULT_READ_TIMEOUT);
+		return read(this.readTimeout);
 	}
 
 	/**
@@ -396,6 +376,77 @@ public class RemoteConsole implements Closeable {
 	}
 
 	private record RawResponse(int responseType, int requestId, byte[] data) {
+	}
+
+	/**
+	 * Builder for creating {@link RemoteConsole} instances with custom configuration.
+	 */
+	public static class Builder {
+
+		private final String host;
+
+		private final String password;
+
+		private Duration connectTimeout = DEFAULT_CONNECT_TIMEOUT;
+
+		private Duration readTimeout = DEFAULT_READ_TIMEOUT;
+
+		private Builder(String host, String password) {
+			this.host = Objects.requireNonNull(host, "host must not be null");
+			this.password = Objects.requireNonNull(password, "password must not be null");
+		}
+
+		/**
+		 * Sets the connection timeout.
+		 * @param connectTimeout the connection timeout (default: 10 seconds)
+		 * @return this builder
+		 */
+		public Builder connectTimeout(Duration connectTimeout) {
+			this.connectTimeout = Objects.requireNonNull(connectTimeout, "connectTimeout must not be null");
+			return this;
+		}
+
+		/**
+		 * Sets the read timeout for responses.
+		 * @param readTimeout the read timeout (default: 2 minutes)
+		 * @return this builder
+		 */
+		public Builder readTimeout(Duration readTimeout) {
+			this.readTimeout = Objects.requireNonNull(readTimeout, "readTimeout must not be null");
+			return this;
+		}
+
+		/**
+		 * Connects to the RCON server and authenticates.
+		 * @return a connected and authenticated RemoteConsole instance
+		 * @throws UncheckedIOException if the connection fails
+		 * @throws RconException.AuthFailedException if authentication fails
+		 * @throws RconException.InvalidAuthResponseException if the server returns an
+		 * invalid auth response
+		 */
+		public RemoteConsole connect() {
+			SocketAddress address = parseHostPort(this.host);
+			SocketChannel channel = null;
+			try {
+				channel = SocketChannel.open();
+				channel.socket().connect(address, (int) this.connectTimeout.toMillis());
+				RemoteConsole console = new RemoteConsole(channel, this.readTimeout);
+				console.authenticate(this.password, this.connectTimeout);
+				return console;
+			}
+			catch (IOException ex) {
+				if (channel != null) {
+					try {
+						channel.close();
+					}
+					catch (IOException closeEx) {
+						ex.addSuppressed(closeEx);
+					}
+				}
+				throw new UncheckedIOException(ex);
+			}
+		}
+
 	}
 
 }
