@@ -80,6 +80,29 @@ try (var rcon = RemoteConsole.connect("localhost:25575", "password")) {
 }
 ```
 
+### Using with JShell
+
+You can quickly test rcon4j using JShell without setting up a project.
+
+```bash
+jshell --class-path rcon4j-0.1.0.jar
+```
+
+```java
+jshell> import am.ik.rcon.*
+
+jshell> var rcon = RemoteConsole.connect("localhost:25575", "password")
+rcon ==> am.ik.rcon.RemoteConsole@6a6824be
+
+jshell> rcon.command("list").body()
+$3 ==> "There are 0 of a max of 20 players online:"
+
+jshell> rcon.command("seed").body()
+$4 ==> "Seed: [-1234567890]"
+
+jshell> rcon.close()
+```
+
 ## License
 
 Apache License 2.0
