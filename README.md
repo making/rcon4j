@@ -1,5 +1,8 @@
 # rcon4j
 
+[![Maven Central](https://img.shields.io/maven-central/v/am.ik.rcon/rcon4j.svg)](https://search.maven.org/search?q=g:am.ik.rcon%20AND%20a:rcon4j)
+
+
 A Java library for the RCON (Remote Console) protocol.
 
 RCON is a TCP/IP-based protocol that allows remote administration of game servers, commonly used by Minecraft, Valve Source Engine games, and others.
