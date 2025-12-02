@@ -27,6 +27,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * A client for the Source RCON (Remote Console) protocol.
@@ -97,10 +98,13 @@ public class RemoteConsole implements Closeable {
 
 	private final Duration readTimeout;
 
+	private final ReentrantLock commandLock;
+
 	private RemoteConsole(SocketChannel channel, Duration readTimeout) {
 		this.channel = channel;
 		this.requestId = new AtomicInteger(0x7fffffff);
 		this.readTimeout = readTimeout;
+		this.commandLock = new ReentrantLock();
 	}
 
 	/**
@@ -130,6 +134,11 @@ public class RemoteConsole implements Closeable {
 
 	/**
 	 * Sends a command to the RCON server and reads the response.
+	 *
+	 * <p>
+	 * This method is thread-safe. Concurrent calls will be serialized to ensure that each
+	 * command's response is correctly matched.
+	 * </p>
 	 * @param cmd the command to execute
 	 * @return the response from the server
 	 * @throws UncheckedIOException if an I/O error occurs
@@ -137,12 +146,23 @@ public class RemoteConsole implements Closeable {
 	 * length
 	 */
 	public RconResponse command(String cmd) {
-		write(cmd);
-		return read();
+		this.commandLock.lock();
+		try {
+			write(cmd);
+			return read();
+		}
+		finally {
+			this.commandLock.unlock();
+		}
 	}
 
 	/**
 	 * Sends a command to the RCON server.
+	 *
+	 * <p>
+	 * This method is thread-safe and will block if another thread is executing
+	 * {@link #command(String)}, {@link #write(String)}, or {@link #read()}.
+	 * </p>
 	 * @param cmd the command to execute
 	 * @return the request ID assigned to this command
 	 * @throws UncheckedIOException if an I/O error occurs
@@ -150,11 +170,22 @@ public class RemoteConsole implements Closeable {
 	 * length
 	 */
 	public int write(String cmd) {
-		return writeCommand(CMD_EXEC_COMMAND, cmd);
+		this.commandLock.lock();
+		try {
+			return writeCommand(CMD_EXEC_COMMAND, cmd);
+		}
+		finally {
+			this.commandLock.unlock();
+		}
 	}
 
 	/**
 	 * Reads a response from the RCON server using the configured read timeout.
+	 *
+	 * <p>
+	 * This method is thread-safe and will block if another thread is executing
+	 * {@link #command(String)}, {@link #write(String)}, or {@link #read()}.
+	 * </p>
 	 * @return the response containing the body and request ID
 	 * @throws UncheckedIOException if an I/O error occurs
 	 */
@@ -164,16 +195,27 @@ public class RemoteConsole implements Closeable {
 
 	/**
 	 * Reads a response from the RCON server with a custom timeout.
+	 *
+	 * <p>
+	 * This method is thread-safe and will block if another thread is executing
+	 * {@link #command(String)}, {@link #write(String)}, or {@link #read(Duration)}.
+	 * </p>
 	 * @param timeout the read timeout
 	 * @return the response containing the body and request ID
 	 * @throws UncheckedIOException if an I/O error occurs
 	 */
 	public RconResponse read(Duration timeout) {
-		RawResponse raw = readResponse(timeout);
-		if (raw.responseType() != RESP_RESPONSE) {
-			return new RconResponse("", 0);
+		this.commandLock.lock();
+		try {
+			RawResponse raw = readResponse(timeout);
+			if (raw.responseType() != RESP_RESPONSE) {
+				return new RconResponse("", 0);
+			}
+			return new RconResponse(new String(raw.data(), StandardCharsets.UTF_8), raw.requestId());
 		}
-		return new RconResponse(new String(raw.data(), StandardCharsets.UTF_8), raw.requestId());
+		finally {
+			this.commandLock.unlock();
+		}
 	}
 
 	/**
