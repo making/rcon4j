@@ -6,7 +6,7 @@
 
 	<groupId>am.ik.rcon</groupId>
 	<artifactId>rcon4j</artifactId>
-	<version>0.1.0</version>
+	<version>0.1.1-SNAPSHOT</version>
 	<name>rcon4j</name>
 	<description>A Java library for the RCON (Remote Console) protocol</description>
 
